@@ -1,0 +1,8 @@
+[package]
+name = "kstat"
+version = "0.1.0"
+authors = ["Mike Zeller <mike@mikezeller.net>"]
+
+[dependencies]
+libc = "0.2"
+byteorder = "1.2"
