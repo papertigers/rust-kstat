@@ -3,6 +3,7 @@ extern crate libc;
 
 use std::collections::HashMap;
 use std::io;
+use std::marker::PhantomData;
 use std::ptr;
 
 mod ffi;
@@ -48,7 +49,10 @@ impl KstatCtl {
                 c_module.as_ptr(),
                 instance,
                 c_name.as_ptr(),
-            )).map(|k| Kstat { inner: k })
+            )).map(|k| Kstat {
+                inner: k,
+                _marker: PhantomData,
+            })
         }
     }
 
@@ -65,11 +69,12 @@ impl Drop for KstatCtl {
 }
 
 #[derive(Debug)]
-pub struct Kstat {
+pub struct Kstat<'ksctl> {
     inner: *const ffi::kstat_t,
+    _marker: PhantomData<&'ksctl KstatCtl>,
 }
 
-impl Kstat {
+impl<'ksctl> Kstat<'ksctl> {
     /// Returns a `HashMap` for the given kstat and all of its data fields
     pub fn to_hashmap(&self, ctl: &KstatCtl) -> io::Result<HashMap<String, KstatNamedData>> {
         ctl.kstat_read(self)?;

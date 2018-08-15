@@ -44,7 +44,7 @@ pub struct kstat_t {
 impl kstat_t {
     pub fn get_class(&self) -> String {
         let cstr = unsafe { CStr::from_ptr(self.ks_class.as_ptr()) };
-        String::from(cstr.to_str().expect("failed to get str from the kernel"))
+        cstr.to_string_lossy().into_owned()
     }
 }
 
@@ -86,7 +86,7 @@ impl kstat_named_t {
     pub fn value_as_string(&self) -> String {
         let ptr = NativeEndian::read_u64(&self.value);
         let cstr = unsafe { CStr::from_ptr(ptr as *const c_char) };
-        String::from(cstr.to_str().expect("failed to get str from the kernel"))
+        cstr.to_string_lossy().into_owned()
     }
 }
 

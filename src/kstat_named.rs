@@ -23,9 +23,7 @@ impl KstatNamed {
 
     pub fn name(&self) -> String {
         let cstr = unsafe { CStr::from_ptr((*self.inner).name.as_ptr()) };
-
-        // force unwrap the data from the kernel
-        cstr.to_str().unwrap().to_string()
+        cstr.to_string_lossy().into_owned()
     }
 
     fn get_data_type(&self) -> u8 {
