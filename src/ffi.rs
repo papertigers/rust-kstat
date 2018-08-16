@@ -1,5 +1,6 @@
 use byteorder::{ByteOrder, NativeEndian};
 use libc::{c_char, c_int, c_longlong, c_uchar, c_uint, c_void, size_t};
+use std::borrow::Cow;
 use std::ffi::CStr;
 
 pub const KSTAT_TYPE_RAW: c_uchar = 0; // can be anything
@@ -7,7 +8,6 @@ pub const KSTAT_TYPE_NAMED: c_uchar = 1; // name/value pair
 pub const KSTAT_TYPE_INTR: c_uchar = 2; // interrupt statistics
 pub const KSTAT_TYPE_IO: c_uchar = 3; // I/O statistics
 pub const KSTAT_TYPE_TIMER: c_uchar = 4; // event timer
-pub const KSTAT_NUM_TYPES: c_uchar = 5;
 
 pub const KSTAT_STRLEN: usize = 31; // 30 chars + NULL; must be 16 * n - 1
 
@@ -42,9 +42,19 @@ pub struct kstat_t {
 }
 
 impl kstat_t {
-    pub fn get_class(&self) -> String {
+    pub fn get_name(&self) -> Cow<str> {
+        let cstr = unsafe { CStr::from_ptr(self.ks_name.as_ptr()) };
+        cstr.to_string_lossy()
+    }
+
+    pub fn get_class(&self) -> Cow<str> {
         let cstr = unsafe { CStr::from_ptr(self.ks_class.as_ptr()) };
-        cstr.to_string_lossy().into_owned()
+        cstr.to_string_lossy()
+    }
+
+    pub fn get_module(&self) -> Cow<str> {
+        let cstr = unsafe { CStr::from_ptr(self.ks_module.as_ptr()) };
+        cstr.to_string_lossy()
     }
 }
 
@@ -63,6 +73,10 @@ pub struct kstat_named_t {
 }
 
 impl kstat_named_t {
+    pub fn get_name(&self) -> Cow<str> {
+        let cstr = unsafe { CStr::from_ptr(self.name.as_ptr()) };
+        cstr.to_string_lossy()
+    }
     pub fn value_as_char(&self) -> c_char {
         c_char::from_le(self.value[0] as i8)
     }
@@ -95,12 +109,13 @@ extern "C" {
     pub fn kstat_open() -> *const kstat_ctl_t;
     pub fn kstat_close(kc: *const kstat_ctl_t) -> c_int;
     pub fn kstat_chain_update(kc: *const kstat_ctl_t) -> c_int;
-    pub fn kstat_lookup(
-        kc: *const kstat_ctl_t,
-        ks_module: *const c_char,
-        ks_instance: c_int,
-        ks_name: *const c_char,
-    ) -> *const kstat_t;
+    // In case we want this again one day
+    //pub fn kstat_lookup(
+    //    kc: *const kstat_ctl_t,
+    //    ks_module: *const c_char,
+    //    ks_instance: c_int,
+    //    ks_name: *const c_char,
+    //) -> *const kstat_t;
     // Marking the buf as const instead of mut because we don't plan on using it in this API
     pub fn kstat_read(kc: *const kstat_ctl_t, ksp: *const kstat_t, buf: *const c_void) -> c_int;
 }

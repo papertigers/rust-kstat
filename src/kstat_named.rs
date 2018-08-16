@@ -1,5 +1,5 @@
 use super::ffi;
-use std::ffi::CStr;
+use std::borrow::Cow;
 
 #[derive(Debug)]
 pub enum KstatNamedData {
@@ -21,9 +21,8 @@ impl KstatNamed {
         KstatNamed { inner: ptr }
     }
 
-    pub fn name(&self) -> String {
-        let cstr = unsafe { CStr::from_ptr((*self.inner).name.as_ptr()) };
-        cstr.to_string_lossy().into_owned()
+    pub fn name(&self) -> Cow<str> {
+        unsafe { (*self.inner).get_name() }
     }
 
     fn get_data_type(&self) -> u8 {
@@ -31,7 +30,7 @@ impl KstatNamed {
     }
 
     pub fn read(&self) -> (String, KstatNamedData) {
-        (self.name(), KstatNamedData::from(&*self))
+        (self.name().into_owned(), KstatNamedData::from(&*self))
     }
 }
 

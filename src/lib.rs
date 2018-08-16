@@ -1,17 +1,16 @@
 extern crate byteorder;
 extern crate libc;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
 use std::ptr;
 
 mod ffi;
-mod kstat_lookup;
 pub mod kstat_named;
 mod kstat_types;
 
-use kstat_lookup::KstatTriplet;
 use kstat_named::{KstatNamed, KstatNamedData};
 
 #[derive(Debug)]
@@ -31,28 +30,56 @@ impl KstatCtl {
         Ok(ret)
     }
 
-    /// Traverses the kstat chain searching for a kstat with the same module, instance, and name
-    /// fields. The module and name fields can be ignored in a search by passing in `None`. The
-    /// instance can also be ignored by passing in `-1`.
-    pub fn lookup(
+    pub fn reader(
         &self,
+        class: Option<&str>,
         module: Option<&str>,
-        instance: i32,
-        name: Option<&str>,
-    ) -> io::Result<Kstat> {
-        let c_module = KstatTriplet::new(module)?;
-        let c_name = KstatTriplet::new(name)?;
+        instance: Option<i32>,
+    ) -> KstatReader {
+        let mut kstats = Vec::new();
+        let mut done = false;
+        let mut kstat_ptr = unsafe { (*self.inner).kc_chain };
 
-        unsafe {
-            ptr_or_err(ffi::kstat_lookup(
-                self.inner,
-                c_module.as_ptr(),
-                instance,
-                c_name.as_ptr(),
-            )).map(|k| Kstat {
-                inner: k,
+        while !done {
+            let next = unsafe { (*kstat_ptr).ks_next };
+            let kstat = Kstat {
+                inner: kstat_ptr,
                 _marker: PhantomData,
-            })
+            };
+
+            // Walk the chain until the end
+            if next.is_null() {
+                done = true;
+            } else {
+                kstat_ptr = next;
+            }
+
+            // must be NAMED or IO
+            let ks_type = kstat.get_type();
+            if ks_type != ffi::KSTAT_TYPE_NAMED && ks_type != ffi::KSTAT_TYPE_IO {
+                continue;
+            }
+
+            // Compare against class/module/instance
+            if class.is_some() && kstat.get_class() != *class.unwrap() {
+                continue;
+            }
+
+            if module.is_some() && kstat.get_module() != *module.unwrap() {
+                continue;
+            }
+
+            if instance.is_some() && kstat.get_instance() != instance.unwrap() {
+                continue;
+            }
+
+            kstats.push(kstat);
+        }
+
+        KstatReader {
+            inner: kstats,
+            ctl: &self,
+            _marker: PhantomData,
         }
     }
 
@@ -69,43 +96,108 @@ impl Drop for KstatCtl {
 }
 
 #[derive(Debug)]
+pub struct KstatData {
+    pub class: String,
+    pub module: String,
+    pub instance: i32,
+    pub name: String,
+    pub snaptime: i64,
+    pub data: HashMap<String, KstatNamedData>,
+}
+
+#[derive(Debug)]
 pub struct Kstat<'ksctl> {
     inner: *const ffi::kstat_t,
     _marker: PhantomData<&'ksctl KstatCtl>,
 }
 
 impl<'ksctl> Kstat<'ksctl> {
-    /// Returns a `HashMap` for the given kstat and all of its data fields
-    pub fn to_hashmap(&self, ctl: &KstatCtl) -> io::Result<HashMap<String, KstatNamedData>> {
+    pub fn read(&self, ctl: &KstatCtl) -> io::Result<KstatData> {
         ctl.kstat_read(self)?;
-        unsafe {
-            let ndata = (*self.inner).ks_ndata;
-            let head = (*self.inner).ks_data as *const ffi::kstat_named_t;
-            let mut ret = HashMap::with_capacity(ndata as usize + 3);
-            ret.insert(
-                String::from("class"),
-                KstatNamedData::DataString((*self.inner).get_class()),
-            );
-            ret.insert(
-                String::from("snaptime"),
-                KstatNamedData::DataInt64((*self.inner).ks_snaptime),
-            );
-            ret.insert(
-                String::from("crtime"),
-                KstatNamedData::DataInt64((*self.inner).ks_crtime),
-            );
 
-            for i in 0..ndata {
-                let (key, value) = KstatNamed::new(head.offset(i as isize)).read();
-                ret.insert(key, value);
-            }
-
-            Ok(ret)
-        }
+        let class = self.get_class().into_owned();
+        let module = self.get_module().into_owned();
+        let instance = self.get_instance();
+        let name = self.get_name().into_owned();
+        let snaptime = self.get_snaptime();
+        let data = self.get_data();
+        Ok(KstatData {
+            class,
+            module,
+            instance,
+            name,
+            snaptime,
+            data,
+        })
     }
 
+    fn get_data(&self) -> HashMap<String, KstatNamedData> {
+        let head = unsafe { (*self.inner).ks_data as *const ffi::kstat_named_t };
+        let ndata = unsafe { (*self.inner).ks_ndata };
+        let mut ret = HashMap::with_capacity(ndata as usize);
+        for i in 0..ndata {
+            let (key, value) = KstatNamed::new(unsafe { head.offset(i as isize) }).read();
+            ret.insert(key, value);
+        }
+
+        ret
+    }
+
+    #[inline]
     fn get_inner(&self) -> *const ffi::kstat_t {
         self.inner
+    }
+
+    #[inline]
+    fn get_type(&self) -> libc::c_uchar {
+        unsafe { (*self.get_inner()).ks_type }
+    }
+
+    #[inline]
+    fn get_class(&self) -> Cow<str> {
+        unsafe { (*self.inner).get_class() }
+    }
+
+    #[inline]
+    fn get_module(&self) -> Cow<str> {
+        unsafe { (*self.inner).get_module() }
+    }
+
+    #[inline]
+    fn get_name(&self) -> Cow<str> {
+        unsafe { (*self.inner).get_name() }
+    }
+
+    #[inline]
+    fn get_instance(&self) -> i32 {
+        unsafe { (*self.inner).ks_instance }
+    }
+
+    #[inline]
+    fn get_snaptime(&self) -> i64 {
+        unsafe { (*self.inner).ks_snaptime }
+    }
+}
+
+#[derive(Debug)]
+pub struct KstatReader<'a, 'ksctl> {
+    inner: Vec<Kstat<'ksctl>>,
+    ctl: &'a KstatCtl,
+    _marker: PhantomData<&'ksctl KstatCtl>,
+}
+
+impl<'a, 'ksctl> KstatReader<'a, 'ksctl> {
+    pub fn read(&self) -> io::Result<Vec<KstatData>> {
+        // First update the chain
+        self.ctl.chain_update()?;
+
+        // Next loop the kstats of interest
+        let mut ret = Vec::with_capacity(self.inner.len());
+        for k in &self.inner {
+            // TODO handle missing kstat by removing it from vec for future runs
+            ret.push(k.read(self.ctl)?);
+        }
+        Ok(ret)
     }
 }
 

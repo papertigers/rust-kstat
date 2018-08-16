@@ -8,7 +8,6 @@ pub enum KstatType {
     Interrupt,
     IO,
     Timer,
-    Num,
 }
 
 impl From<c_uchar> for KstatType {
@@ -19,7 +18,6 @@ impl From<c_uchar> for KstatType {
             ffi::KSTAT_TYPE_INTR => KstatType::Interrupt,
             ffi::KSTAT_TYPE_IO => KstatType::IO,
             ffi::KSTAT_TYPE_TIMER => KstatType::Timer,
-            ffi::KSTAT_NUM_TYPES => KstatType::Num,
             _ => panic!("invalid kstat type found"),
         }
     }
