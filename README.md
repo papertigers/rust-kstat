@@ -1,5 +1,7 @@
 # kstat
 
+[Docs](https://us-east.manta.joyent.com/mikezeller/public/rust/kstat/index.html)
+
 This rust library provides an ffi wrapper around the native illumos library.
 
 ### Example

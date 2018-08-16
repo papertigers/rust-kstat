@@ -1,3 +1,37 @@
+#![deny(warnings)]
+#![deny(missing_docs)]
+
+//! # kstat
+//!
+//! A simple rust crate that allows you to read kernel statistics via the kstat framework on
+//! illumos. The `kstat` crate exposes a `KstatReader` type that tracks kstats that are of
+//! interest to the consumer, allowing them to call the `read` method on the type to read in all of
+//! the named-value pairs associated with those particular kstats. This means that the crate only
+//! allows the consumer to track/read kstats that are of type KSTAT_TYPE_NAMED or KSTAT_TYPE_IO.
+//!
+//! # Example:
+//! ```
+//! extern crate kstat;
+//!
+//! use kstat::KstatCtl;
+//!
+//! fn main() {
+//!     // Open a kstat_ctl_t handle
+//!     let ctl = KstatCtl::new().expect("failed to open /dev/kstat");
+//!
+//!     // Create a KstatReader that tracks kstat(s) in the "zone_caps" class
+//!     let reader = ctl.reader(None, None, None, Some("zone_caps"));
+//!
+//!     // Call read on the  KstatReader to read in kstat(s) and their fields
+//!     let stats = reader.read().expect("failed to read kstats");
+//!
+//!     // Loop over all of the returned `KstatData`s and debug print them
+//!     for stat in stats {
+//!         println!("{:#?}", stat);
+//!     }
+//! }
+//!
+
 extern crate byteorder;
 extern crate libc;
 
@@ -8,11 +42,13 @@ use std::marker::PhantomData;
 use std::ptr;
 
 mod ffi;
+/// The type of data found in named-value pairs of a kstat
 pub mod kstat_named;
 mod kstat_types;
 
 use kstat_named::{KstatNamed, KstatNamedData};
 
+/// A wrapper around a `kstat_ctl_t` handle.
 #[derive(Debug)]
 pub struct KstatCtl {
     inner: *const ffi::kstat_ctl_t,
@@ -20,21 +56,39 @@ pub struct KstatCtl {
 
 impl KstatCtl {
     /// Creates a new Kstat and initializes the underlying connection with `/dev/kstat`.
+    ///
+    /// # Example
+    /// ```
+    /// let ctl = kstat::KstatCtl::new().expect("failed to open /dev/kstat");
+    /// ```
     pub fn new() -> io::Result<Self> {
         unsafe { ptr_or_err(ffi::kstat_open()).map(|c| KstatCtl { inner: c }) }
     }
 
     /// Updates the kstat chain, returning true if the chain has changed.
-    pub fn chain_update(&self) -> io::Result<bool> {
+    fn chain_update(&self) -> io::Result<bool> {
         let ret = unsafe { chain_updated(ret_or_err(ffi::kstat_chain_update(self.inner))?) };
         Ok(ret)
     }
 
+    /// Returns a `KstatReader` that tracks the kstats of interest.
+    ///
+    /// * `module` - optional string denoting module of kstat(s) to read
+    /// * `instance` - optional int denoting instance of kstat(s) to read
+    /// * `name` - optional string denoting name of kstat(s) to read
+    /// * `class` - optional string denoting class of kstat(s) to read
+    ///
+    /// # Example
+    /// ```
+    /// # let ctl = kstat::KstatCtl::new().expect("failed to open /dev/kstat");
+    /// let reader = ctl.reader(None, None, None, Some("zone_caps"));
+    /// ```
     pub fn reader(
         &self,
-        class: Option<&str>,
         module: Option<&str>,
         instance: Option<i32>,
+        name: Option<&str>,
+        class: Option<&str>,
     ) -> KstatReader {
         let mut kstats = Vec::new();
         let mut done = false;
@@ -60,16 +114,20 @@ impl KstatCtl {
                 continue;
             }
 
-            // Compare against class/module/instance
-            if class.is_some() && kstat.get_class() != *class.unwrap() {
-                continue;
-            }
-
+            // Compare against module/instance/name/class
             if module.is_some() && kstat.get_module() != *module.unwrap() {
                 continue;
             }
 
             if instance.is_some() && kstat.get_instance() != instance.unwrap() {
+                continue;
+            }
+
+            if name.is_some() && kstat.get_name() != *name.unwrap() {
+                continue;
+            }
+
+            if class.is_some() && kstat.get_class() != *class.unwrap() {
                 continue;
             }
 
@@ -79,7 +137,6 @@ impl KstatCtl {
         KstatReader {
             inner: kstats,
             ctl: &self,
-            _marker: PhantomData,
         }
     }
 
@@ -95,24 +152,33 @@ impl Drop for KstatCtl {
     }
 }
 
+/// The corresponding data read in from a kstat
 #[derive(Debug)]
 pub struct KstatData {
+    /// string denoting class of kstat
     pub class: String,
+    /// string denoting module of kstat
     pub module: String,
+    /// int denoting instance of kstat
     pub instance: i32,
+    /// string denoting name of kstat
     pub name: String,
+    /// nanoseconds since boot of this snapshot
     pub snaptime: i64,
+    /// A hashmap of the named-value pairs for the kstat
     pub data: HashMap<String, KstatNamedData>,
 }
 
+/// Wrapper around a kstat pointer
 #[derive(Debug)]
-pub struct Kstat<'ksctl> {
+struct Kstat<'ksctl> {
     inner: *const ffi::kstat_t,
     _marker: PhantomData<&'ksctl KstatCtl>,
 }
 
 impl<'ksctl> Kstat<'ksctl> {
-    pub fn read(&self, ctl: &KstatCtl) -> io::Result<KstatData> {
+    /// Read this particular kstat and its corresponding data into a `KstatData`
+    fn read(&self, ctl: &KstatCtl) -> io::Result<KstatData> {
         ctl.kstat_read(self)?;
 
         let class = self.get_class().into_owned();
@@ -179,14 +245,24 @@ impl<'ksctl> Kstat<'ksctl> {
     }
 }
 
+/// `KstatReader` represents all of the kstats that matched the fields of interest when created
+/// with `KstatCtl.reader(...)`
 #[derive(Debug)]
-pub struct KstatReader<'a, 'ksctl> {
-    inner: Vec<Kstat<'ksctl>>,
+pub struct KstatReader<'a> {
+    inner: Vec<Kstat<'a>>,
     ctl: &'a KstatCtl,
-    _marker: PhantomData<&'ksctl KstatCtl>,
 }
 
-impl<'a, 'ksctl> KstatReader<'a, 'ksctl> {
+impl<'a> KstatReader<'a> {
+    /// Calling on the Reader will update the kstat chain and proceed to read each kstat and its
+    /// corresponding data.
+    ///
+    /// # Example
+    /// ```
+    /// # let ctl = kstat::KstatCtl::new().expect("failed to open /dev/kstat");
+    /// # let reader = ctl.reader(None, None, None, Some("zone_caps"));
+    /// let stats = reader.read().expect("failed to read kstat");
+    /// ```
     pub fn read(&self) -> io::Result<Vec<KstatData>> {
         // First update the chain
         self.ctl.chain_update()?;

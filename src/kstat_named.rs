@@ -1,13 +1,20 @@
 use super::ffi;
 use std::borrow::Cow;
 
+/// The types of data a kstat named/value pair can contain
 #[derive(Debug)]
 pub enum KstatNamedData {
+    /// KSTAT_DATA_CHAR
     DataChar(i8),
+    /// KSTAT_DATA_INT32
     DataInt32(i32),
+    /// KSTAT_DATA_UINT32
     DataUInt32(u32),
+    /// KSTAT_DATA_INT64 or KSTAT_DATA_LONG
     DataInt64(i64),
+    /// KSTAT_DATA_UINT64 or KSTAT_DATA_ULONG
     DataUInt64(u64),
+    /// KSTAT_DATA_STRING
     DataString(String),
 }
 
