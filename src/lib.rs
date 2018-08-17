@@ -165,6 +165,8 @@ pub struct KstatData {
     pub name: String,
     /// nanoseconds since boot of this snapshot
     pub snaptime: i64,
+    /// creation time of this kstat in nanoseconds since boot
+    pub crtime: i64,
     /// A hashmap of the named-value pairs for the kstat
     pub data: HashMap<String, KstatNamedData>,
 }
@@ -186,6 +188,7 @@ impl<'ksctl> Kstat<'ksctl> {
         let instance = self.get_instance();
         let name = self.get_name().into_owned();
         let snaptime = self.get_snaptime();
+        let crtime = self.get_crtime();
         let data = self.get_data();
         Ok(KstatData {
             class,
@@ -193,6 +196,7 @@ impl<'ksctl> Kstat<'ksctl> {
             instance,
             name,
             snaptime,
+            crtime,
             data,
         })
     }
@@ -243,6 +247,11 @@ impl<'ksctl> Kstat<'ksctl> {
     fn get_snaptime(&self) -> i64 {
         unsafe { (*self.inner).ks_snaptime }
     }
+
+    #[inline]
+    fn get_crtime(&self) -> i64 {
+        unsafe { (*self.inner).ks_crtime }
+    }
 }
 
 /// `KstatReader` represents all of the kstats that matched the fields of interest when created
@@ -254,8 +263,8 @@ pub struct KstatReader<'a> {
 }
 
 impl<'a> KstatReader<'a> {
-    /// Calling on the Reader will update the kstat chain and proceed to read each kstat and its
-    /// corresponding data.
+    /// Calling read on the Reader will update the kstat chain and proceed to read each kstat and
+    /// its corresponding data.
     ///
     /// # Example
     /// ```
