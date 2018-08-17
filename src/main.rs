@@ -1,12 +1,10 @@
 extern crate kstat;
 
-use kstat::KstatCtl;
+use kstat::KstatReader;
 
 fn main() {
-    let ctl = KstatCtl::new().expect("failed to open /dev/kstat");
-    let reader = ctl.reader(None, None, None, Some("zone_vfs"));
+    let reader = KstatReader::new(None, None, None, Some("zone_vfs"))
+        .expect("failed to create kstat reader");
     let stats = reader.read().expect("failed to read kstats");
-    for stat in stats {
-        println!("{:#?}", stat);
-    }
+    println!("{:?}", stats);
 }
