@@ -36,149 +36,15 @@ extern crate byteorder;
 extern crate libc;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
-use std::ptr;
 
 mod ffi;
+mod kstat_ctl;
 /// The type of data found in named-value pairs of a kstat
 pub mod kstat_named;
 
-use kstat_named::{KstatNamed, KstatNamedData};
-
-/// A wrapper around a `kstat_ctl_t` handle.
-#[derive(Debug)]
-struct KstatCtl {
-    inner: *const ffi::kstat_ctl_t,
-}
-
-impl KstatCtl {
-    pub fn new() -> io::Result<Self> {
-        unsafe { ptr_or_err(ffi::kstat_open()).map(|c| KstatCtl { inner: c }) }
-    }
-
-    fn get_chain(&self) -> *const ffi::kstat_t {
-        unsafe { (*self.inner).kc_chain }
-    }
-
-    fn chain_update(&self) -> io::Result<bool> {
-        let ret = unsafe { chain_updated(ret_or_err(ffi::kstat_chain_update(self.inner))?) };
-        Ok(ret)
-    }
-
-    fn kstat_read(&self, kstat: &Kstat) -> io::Result<i32> {
-        unsafe { ret_or_err(ffi::kstat_read(self.inner, kstat.get_inner(), ptr::null())) }
-    }
-}
-
-impl Drop for KstatCtl {
-    fn drop(&mut self) {
-        let _ = unsafe { ffi::kstat_close(self.inner) };
-    }
-}
-
-/// The corresponding data read in from a kstat
-#[derive(Debug)]
-pub struct KstatData {
-    /// string denoting class of kstat
-    pub class: String,
-    /// string denoting module of kstat
-    pub module: String,
-    /// int denoting instance of kstat
-    pub instance: i32,
-    /// string denoting name of kstat
-    pub name: String,
-    /// nanoseconds since boot of this snapshot
-    pub snaptime: i64,
-    /// creation time of this kstat in nanoseconds since boot
-    pub crtime: i64,
-    /// A hashmap of the named-value pairs for the kstat
-    pub data: HashMap<String, KstatNamedData>,
-}
-
-/// Wrapper around a kstat pointer
-#[derive(Debug)]
-struct Kstat<'ksctl> {
-    inner: *const ffi::kstat_t,
-    _marker: PhantomData<&'ksctl KstatCtl>,
-}
-
-impl<'ksctl> Kstat<'ksctl> {
-    /// Read this particular kstat and its corresponding data into a `KstatData`
-    fn read(&self, ctl: &KstatCtl) -> io::Result<KstatData> {
-        ctl.kstat_read(self)?;
-
-        let class = self.get_class().into_owned();
-        let module = self.get_module().into_owned();
-        let instance = self.get_instance();
-        let name = self.get_name().into_owned();
-        let snaptime = self.get_snaptime();
-        let crtime = self.get_crtime();
-        let data = self.get_data();
-        Ok(KstatData {
-            class,
-            module,
-            instance,
-            name,
-            snaptime,
-            crtime,
-            data,
-        })
-    }
-
-    fn get_data(&self) -> HashMap<String, KstatNamedData> {
-        let head = unsafe { (*self.inner).ks_data as *const ffi::kstat_named_t };
-        let ndata = unsafe { (*self.inner).ks_ndata };
-        let mut ret = HashMap::with_capacity(ndata as usize);
-        for i in 0..ndata {
-            let (key, value) = KstatNamed::new(unsafe { head.offset(i as isize) }).read();
-            ret.insert(key, value);
-        }
-
-        ret
-    }
-
-    #[inline]
-    fn get_inner(&self) -> *const ffi::kstat_t {
-        self.inner
-    }
-
-    #[inline]
-    fn get_type(&self) -> libc::c_uchar {
-        unsafe { (*self.get_inner()).ks_type }
-    }
-
-    #[inline]
-    fn get_class(&self) -> Cow<str> {
-        unsafe { (*self.inner).get_class() }
-    }
-
-    #[inline]
-    fn get_module(&self) -> Cow<str> {
-        unsafe { (*self.inner).get_module() }
-    }
-
-    #[inline]
-    fn get_name(&self) -> Cow<str> {
-        unsafe { (*self.inner).get_name() }
-    }
-
-    #[inline]
-    fn get_instance(&self) -> i32 {
-        unsafe { (*self.inner).ks_instance }
-    }
-
-    #[inline]
-    fn get_snaptime(&self) -> i64 {
-        unsafe { (*self.inner).ks_snaptime }
-    }
-
-    #[inline]
-    fn get_crtime(&self) -> i64 {
-        unsafe { (*self.inner).ks_crtime }
-    }
-}
+use kstat_ctl::{Kstat, KstatCtl, KstatData};
 
 /// `KstatReader` represents all of the kstats that matched the fields of interest when created
 /// with `KstatCtl.reader(...)`
@@ -217,22 +83,16 @@ impl<'a> KstatReader<'a> {
 
     fn find(&self) -> Vec<Kstat> {
         let mut kstats = Vec::new();
-        let mut done = false;
         let mut kstat_ptr = self.ctl.get_chain();
 
-        while !done {
-            let next = unsafe { (*kstat_ptr).ks_next };
+        while !kstat_ptr.is_null() {
             let kstat = Kstat {
                 inner: kstat_ptr,
                 _marker: PhantomData,
             };
 
-            // Walk the chain until the end
-            if next.is_null() {
-                done = true;
-            } else {
-                kstat_ptr = next;
-            }
+            // Loop until we reach the end of the chain
+            kstat_ptr = unsafe { (*kstat_ptr).ks_next };
 
             // must be NAMED or IO
             let ks_type = kstat.get_type();
@@ -276,29 +136,5 @@ impl<'a> KstatReader<'a> {
             ret.push(k.read(&self.ctl)?);
         }
         Ok(ret)
-    }
-}
-
-// ============ Helpers ============
-
-fn ptr_or_err<T>(ptr: *const T) -> io::Result<*const T> {
-    if ptr.is_null() {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ptr)
-    }
-}
-
-fn ret_or_err(ret: i32) -> io::Result<i32> {
-    match ret {
-        -1 => Err(io::Error::last_os_error()),
-        _ => Ok(ret),
-    }
-}
-
-fn chain_updated(kid: i32) -> bool {
-    match kid {
-        0 => false,
-        _ => true,
     }
 }
