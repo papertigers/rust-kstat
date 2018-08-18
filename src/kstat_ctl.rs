@@ -1,6 +1,9 @@
 use super::ffi;
 use super::kstat_named::{KstatNamed, KstatNamedData};
+use KstatData;
+
 use libc;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
@@ -36,25 +39,6 @@ impl Drop for KstatCtl {
     fn drop(&mut self) {
         let _ = unsafe { ffi::kstat_close(self.inner) };
     }
-}
-
-/// The corresponding data read in from a kstat
-#[derive(Debug)]
-pub struct KstatData {
-    /// string denoting class of kstat
-    pub class: String,
-    /// string denoting module of kstat
-    pub module: String,
-    /// int denoting instance of kstat
-    pub instance: i32,
-    /// string denoting name of kstat
-    pub name: String,
-    /// nanoseconds since boot of this snapshot
-    pub snaptime: i64,
-    /// creation time of this kstat in nanoseconds since boot
-    pub crtime: i64,
-    /// A hashmap of the named-value pairs for the kstat
-    pub data: HashMap<String, KstatNamedData>,
 }
 
 /// Wrapper around a kstat pointer

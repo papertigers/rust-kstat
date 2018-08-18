@@ -36,6 +36,7 @@ extern crate byteorder;
 extern crate libc;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
 
@@ -44,7 +45,27 @@ mod kstat_ctl;
 /// The type of data found in named-value pairs of a kstat
 pub mod kstat_named;
 
-use kstat_ctl::{Kstat, KstatCtl, KstatData};
+use kstat_ctl::{Kstat, KstatCtl};
+use kstat_named::KstatNamedData;
+
+/// The corresponding data read in from a kstat
+#[derive(Debug)]
+pub struct KstatData {
+    /// string denoting class of kstat
+    pub class: String,
+    /// string denoting module of kstat
+    pub module: String,
+    /// int denoting instance of kstat
+    pub instance: i32,
+    /// string denoting name of kstat
+    pub name: String,
+    /// nanoseconds since boot of this snapshot
+    pub snaptime: i64,
+    /// creation time of this kstat in nanoseconds since boot
+    pub crtime: i64,
+    /// A hashmap of the named-value pairs for the kstat
+    pub data: HashMap<String, KstatNamedData>,
+}
 
 /// `KstatReader` represents all of the kstats that matched the fields of interest when created
 /// with `KstatCtl.reader(...)`
@@ -119,6 +140,7 @@ impl<'a> KstatReader<'a> {
                 continue;
             }
 
+            // TODO if the kstat went away by the time we call read forget it and move on
             ret.push(kstat.read(&self.ctl)?);
         }
 
