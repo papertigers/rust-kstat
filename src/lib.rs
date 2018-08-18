@@ -81,10 +81,12 @@ impl<'a> KstatReader<'a> {
         })
     }
 
-    fn find(&self) -> Vec<Kstat> {
-        let mut kstats = Vec::new();
-        let mut kstat_ptr = self.ctl.get_chain();
+    pub fn read(&self) -> io::Result<Vec<KstatData>> {
+        // First update the chain
+        self.ctl.chain_update()?;
 
+        let mut ret = Vec::new();
+        let mut kstat_ptr = self.ctl.get_chain();
         while !kstat_ptr.is_null() {
             let kstat = Kstat {
                 inner: kstat_ptr,
@@ -117,24 +119,9 @@ impl<'a> KstatReader<'a> {
                 continue;
             }
 
-            kstats.push(kstat);
+            ret.push(kstat.read(&self.ctl)?);
         }
 
-        kstats
-    }
-
-    pub fn read(&self) -> io::Result<Vec<KstatData>> {
-        // First update the chain
-        self.ctl.chain_update()?;
-
-        let found = self.find();
-
-        // Next loop the kstats of interest
-        let mut ret = Vec::with_capacity(found.len());
-        for k in &found {
-            // TODO handle missing kstat by skipping over it
-            ret.push(k.read(&self.ctl)?);
-        }
         Ok(ret)
     }
 }
