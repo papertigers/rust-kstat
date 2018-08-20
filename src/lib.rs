@@ -140,8 +140,18 @@ impl<'a> KstatReader<'a> {
                 continue;
             }
 
-            // TODO if the kstat went away by the time we call read forget it and move on
-            ret.push(kstat.read(&self.ctl)?);
+            match kstat.read(&self.ctl) {
+                Ok(k) => ret.push(k),
+                Err(e) => {
+                    // the kstat went away by the time we call read, so forget it and move on
+                    // example: a zone is no longer running
+                    if e.raw_os_error().unwrap() == libc::ENXIO {
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
         }
 
         Ok(ret)
