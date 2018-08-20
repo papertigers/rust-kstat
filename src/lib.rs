@@ -1,5 +1,5 @@
-//#![deny(warnings)]
-//#![deny(missing_docs)]
+#![deny(warnings)]
+#![deny(missing_docs)]
 
 //! # kstat
 //!
@@ -13,24 +13,15 @@
 //! ```
 //! extern crate kstat;
 //!
-//! use kstat::KstatCtl;
+//! use kstat::KstatReader;
 //!
 //! fn main() {
-//!     // Open a kstat_ctl_t handle
-//!     let ctl = KstatCtl::new().expect("failed to open /dev/kstat");
-//!
-//!     // Create a KstatReader that tracks kstat(s) in the "zone_caps" class
-//!     let reader = ctl.reader(None, None, None, Some("zone_caps"));
-//!
-//!     // Call read on the  KstatReader to read in kstat(s) and their fields
+//!     let reader = KstatReader::new(None, None, None, Some("zone_vfs"))
+//!         .expect("failed to create kstat reader");
 //!     let stats = reader.read().expect("failed to read kstats");
-//!
-//!     // Loop over all of the returned `KstatData`s and debug print them
-//!     for stat in stats {
-//!         println!("{:#?}", stat);
-//!     }
+//!     println!("{:#?}", stats);
 //! }
-//!
+//! ```
 
 extern crate byteorder;
 extern crate libc;
@@ -79,6 +70,18 @@ pub struct KstatReader<'a> {
 }
 
 impl<'a> KstatReader<'a> {
+    /// Returns a `KstatReader` that tracks the kstats of interest.
+    ///
+    /// * `module` - optional string denoting module of kstat(s) to read
+    /// * `instance` - optional int denoting instance of kstat(s) to read
+    /// * `name` - optional string denoting name of kstat(s) to read
+    /// * `class` - optional string denoting class of kstat(s) to read
+    ///
+    /// # Example
+    /// ```
+    /// let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs"))
+    /// .expect("failed to create kstat reader");
+    /// ```
     pub fn new<S>(
         module: Option<S>,
         instance: Option<i32>,
@@ -102,6 +105,14 @@ impl<'a> KstatReader<'a> {
         })
     }
 
+    /// Calling read on the Reader will update the kstat chain and proceed to walk the chain
+    /// reading the corresponding data of a kstat that matches the search criteria.
+    ///
+    /// # Example
+    /// ```
+    /// # let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs")).unwrap();
+    /// let stats = reader.read().expect("failed to read kstat(s)");
+    /// ```
     pub fn read(&self) -> io::Result<Vec<KstatData>> {
         // First update the chain
         self.ctl.chain_update()?;
@@ -155,5 +166,61 @@ impl<'a> KstatReader<'a> {
         }
 
         Ok(ret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_reader() {
+        let reader = KstatReader::new(None, None, None, None).expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        assert!(stats.len() > 0);
+    }
+
+    #[test]
+    fn module_reader() {
+        let module = "cpu";
+        let reader =
+            KstatReader::new(Some(module), None, None, None).expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        for stat in stats {
+            assert_eq!(stat.module, module);
+        }
+    }
+
+    #[test]
+    fn instance_reader() {
+        let instance: i32 = 0;
+        let reader =
+            KstatReader::new(None, Some(instance), None, None).expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        for stat in stats {
+            assert_eq!(stat.instance, instance);
+        }
+    }
+
+    #[test]
+    fn name_reader() {
+        let name = "vm";
+        let reader =
+            KstatReader::new(None, None, Some(name), None).expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        for stat in stats {
+            assert_eq!(stat.name, name);
+        }
+    }
+
+    #[test]
+    fn class_reader() {
+        let class = "misc";
+        let reader =
+            KstatReader::new(None, None, None, Some(class)).expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        for stat in stats {
+            assert_eq!(stat.class, class);
+        }
     }
 }
