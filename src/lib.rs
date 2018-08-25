@@ -227,4 +227,21 @@ mod tests {
             assert_eq!(stat.class, class);
         }
     }
+
+    #[test]
+    fn module_instance_name_class_reader() {
+        let module = "unix";
+        let instance = 1;
+        let name = "kmem_alloc_16";
+        let class = "keme_cache";
+        let reader = KstatReader::new(Some(module), Some(instance), Some(name), Some(class))
+            .expect("failed to create reader");
+        let stats = reader.read().expect("failed to read kstat(s)");
+        for stat in stats {
+            assert_eq!(stat.module, module);
+            assert_eq!(stat.instance, instance);
+            assert_eq!(stat.name, name);
+            assert_eq!(stat.class, class);
+        }
+    }
 }
