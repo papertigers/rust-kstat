@@ -81,6 +81,14 @@ impl<'a> KstatReader<'a> {
     /// ```
     /// let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs"))
     /// .expect("failed to create kstat reader");
+    ///
+    /// // Currently when creating a reader with class, module, and name set to "None" you
+    /// // will need to help the generics around and clue the reader in on the "String" type.
+    /// // The API may eventually change to not require this.
+    ///
+    /// let other_reader = kstat::KstatReader::new::<String>(None, Some(-1), None, None)
+    /// .expect("failed to create kstat reader");
+    ///
     /// ```
     pub fn new<S>(
         module: Option<S>,

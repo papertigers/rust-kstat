@@ -6,17 +6,19 @@ This rust library provides an ffi wrapper around the native illumos library.
 
 ### Example
 
-The following is equivalent to `kstat -p -c zone_caps`:
+The following is equivalent to `kstat -p -n zone_vfs`:
 
 ```rust
 extern crate kstat;
-use kstat::KstatCtl;
+
+use kstat::KstatReader;
+
 fn main() {
-    let ctl = KstatCtl::new().expect("failed to open /dev/kstat");
-    let reader = ctl.reader(Some("zone_caps"), None, None);
+    let reader = KstatReader::new(None, None, None, Some("zone_vfs"))
+        .expect("failed to create kstat reader");
     let stats = reader.read().expect("failed to read kstats");
-    for stat in stats {
-        println!("{:#?}", stat);
-    }
+    println!("{:#?}", stats);
 }
 ```
+
+
