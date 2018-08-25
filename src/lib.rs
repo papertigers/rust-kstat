@@ -154,12 +154,15 @@ impl<'a> KstatReader<'a> {
             match kstat.read(&self.ctl) {
                 Ok(k) => ret.push(k),
                 Err(e) => {
-                    // the kstat went away by the time we call read, so forget it and move on
-                    // example: a zone is no longer running
-                    if e.raw_os_error().unwrap() == libc::ENXIO {
-                        continue;
-                    } else {
-                        return Err(e);
+                    match e.raw_os_error().unwrap() {
+                        // the kstat went away by the time we call read, so forget it and move on
+                        // example: a zone is no longer running
+                        libc::ENXIO => continue,
+                        // I don't know why EIO seems to be common here. The kstat cmd on illumos
+                        // seems to ignore all errors and continue while only reporting the errors
+                        // when REPORT_UNKNOWN is set
+                        libc::EIO => continue,
+                        _ => return Err(e),
                     }
                 }
             }
@@ -175,7 +178,8 @@ mod tests {
 
     #[test]
     fn all_reader() {
-        let reader = KstatReader::new(None, None, None, None).expect("failed to create reader");
+        let reader =
+            KstatReader::new::<String>(None, None, None, None).expect("failed to create reader");
         let stats = reader.read().expect("failed to read kstat(s)");
         assert!(stats.len() > 0);
     }
@@ -194,8 +198,8 @@ mod tests {
     #[test]
     fn instance_reader() {
         let instance: i32 = 0;
-        let reader =
-            KstatReader::new(None, Some(instance), None, None).expect("failed to create reader");
+        let reader = KstatReader::new::<String>(None, Some(instance), None, None)
+            .expect("failed to create reader");
         let stats = reader.read().expect("failed to read kstat(s)");
         for stat in stats {
             assert_eq!(stat.instance, instance);
