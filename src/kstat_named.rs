@@ -37,7 +37,7 @@ impl KstatNamed {
     }
 
     pub fn read(&self) -> (String, KstatNamedData) {
-        (self.name().into_owned(), KstatNamedData::from(&*self))
+        (self.name().into_owned(), self.into())
     }
 }
 

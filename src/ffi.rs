@@ -3,11 +3,8 @@ use libc::{c_char, c_int, c_longlong, c_uchar, c_uint, c_void, size_t};
 use std::borrow::Cow;
 use std::ffi::CStr;
 
-pub const KSTAT_TYPE_RAW: c_uchar = 0; // can be anything
 pub const KSTAT_TYPE_NAMED: c_uchar = 1; // name/value pair
-pub const KSTAT_TYPE_INTR: c_uchar = 2; // interrupt statistics
 pub const KSTAT_TYPE_IO: c_uchar = 3; // I/O statistics
-pub const KSTAT_TYPE_TIMER: c_uchar = 4; // event timer
 
 pub const KSTAT_STRLEN: usize = 31; // 30 chars + NULL; must be 16 * n - 1
 
