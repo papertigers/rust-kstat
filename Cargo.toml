@@ -1,7 +1,11 @@
 [package]
 name = "kstat"
 version = "0.1.0"
+description = "Crate providing an ffi wrapper around the native illumos kstat library."
 authors = ["Mike Zeller <mike@mikezeller.net>"]
+repository = "https://github.com/papertigers/rust-kstat"
+keywords = ["illumos", "kstat", "smartos", "solaris"]
+license = "MIT"
 
 [dependencies]
 libc = "0.2"
