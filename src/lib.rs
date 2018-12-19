@@ -26,7 +26,6 @@
 extern crate byteorder;
 extern crate libc;
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
@@ -61,56 +60,81 @@ pub struct KstatData {
 /// `KstatReader` represents all of the kstats that matched the fields of interest when created
 /// with `KstatCtl.reader(...)`
 #[derive(Debug)]
-pub struct KstatReader<'a> {
-    module: Option<Cow<'a, str>>,
+pub struct KstatReader {
+    module: Option<String>,
     instance: Option<i32>,
-    name: Option<Cow<'a, str>>,
-    class: Option<Cow<'a, str>>,
+    name: Option<String>,
+    class: Option<String>,
     ctl: KstatCtl,
 }
 
-impl<'a> KstatReader<'a> {
+impl KstatReader {
     /// Returns a `KstatReader` that tracks the kstats of interest.
-    ///
-    /// * `module` - optional string denoting module of kstat(s) to read
-    /// * `instance` - optional int denoting instance of kstat(s) to read
-    /// * `name` - optional string denoting name of kstat(s) to read
-    /// * `class` - optional string denoting class of kstat(s) to read
     ///
     /// # Example
     /// ```
-    /// let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs"))
-    /// .expect("failed to create kstat reader");
-    ///
-    /// // Currently when creating a reader with class, module, and name set to "None" you
-    /// // will need to help the generics out and clue the reader in on the "String" type.
-    /// // The API may eventually change to not require this.
-    ///
-    /// let other_reader = kstat::KstatReader::new::<String>(None, Some(-1), None, None)
+    /// let reader = kstat::KstatReader::new()
     /// .expect("failed to create kstat reader");
     ///
     /// ```
-    pub fn new<S>(
-        module: Option<S>,
-        instance: Option<i32>,
-        name: Option<S>,
-        class: Option<S>,
-    ) -> io::Result<Self>
-    where
-        S: Into<Cow<'a, str>>,
-    {
+    pub fn new() -> io::Result<Self> {
         let ctl = KstatCtl::new()?;
-        let module = module.map_or(None, |m| Some(m.into()));
-        let name = name.map_or(None, |n| Some(n.into()));
-        let class = class.map_or(None, |c| Some(c.into()));
 
         Ok(KstatReader {
-            module,
-            instance,
-            name,
-            class,
+            module: None,
+            instance: None,
+            name: None,
+            class: None,
             ctl,
         })
+    }
+
+    // XXX update
+    /// Calling module on the Reader will set the module filter.
+    ///
+    /// # Example
+    /// ```
+    /// # let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs")).unwrap();
+    /// let stats = reader.read().expect("failed to read kstat(s)");
+    /// ```
+    pub fn module<S>(&mut self, m: S) -> &mut Self
+    where
+        S: Into<String>,
+    {
+       self.module = Some(m.into());
+       self
+    }
+
+    // XXX update
+    /// Calling module on the Reader will set the name filter.
+    ///
+    /// # Example
+    /// ```
+    /// # let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs")).unwrap();
+    /// let stats = reader.read().expect("failed to read kstat(s)");
+    /// ```
+    pub fn name<S>(&mut self, n: S) -> &mut Self
+    where
+        S: Into<String>,
+    {
+       self.name = Some(n.into());
+       self
+    }
+
+    // XXX update
+    /// Calling module on the Reader will set the class filter.
+    ///
+    /// # Example
+    /// ```
+    /// # let reader = kstat::KstatReader::new(None, None, None, Some("zone_vfs")).unwrap();
+    /// let stats = reader.read().expect("failed to read kstat(s)");
+    /// ```
+    pub fn class<S>(&mut self, c: S) -> &mut Self
+    where
+        S: Into<String>,
+    {
+       self.class = Some(c.into());
+       self
     }
 
     /// Calling read on the Reader will update the kstat chain and proceed to walk the chain
@@ -142,7 +166,7 @@ impl<'a> KstatReader<'a> {
                 continue;
             }
 
-            // Compare against module/instance/name/class
+
             if self.module.is_some() && kstat.get_module() != *self.module.as_ref().unwrap() {
                 continue;
             }
