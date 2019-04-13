@@ -1,8 +1,13 @@
 stages:
   - build
+  - test
 
-rust-latest:
+cargo-build:
   stage: build
   script:
     - cargo build --verbose
+
+cargo-test:
+  stage: test
+  script:
     - cargo test --verbose
